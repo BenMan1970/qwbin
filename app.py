@@ -5,12 +5,14 @@ from datetime import datetime, timedelta
 import time
 import traceback
 import requests
+import hmac
+import hashlib
 
 st.set_page_config(page_title="Scanner Confluence Forex (Binance Data)", page_icon="⭐", layout="wide")
 st.title("🔍 Scanner Confluence Forex Premium (Données Binance)")
 st.markdown("*Utilisation de l'API Binance pour les données de marché H1*")
 
-# Forex pairs in Binance format with corrected symbols
+# Forex pairs in Binance format
 FOREX_PAIRS_BINANCE = [
     'EURUSDT', 'GBPUSDT', 'BTCUSDT', 'ETHUSDT',
     'AUDUSDT', 'USDCUSDT', 'NZDUSDT', 'XRPUSDT',
@@ -65,30 +67,50 @@ def ichimoku_pine_signal(df_high, df_low, df_close, tenkan_p=9, kijun_p=26, senk
     return sig
 
 @st.cache_data(ttl=300)
-def get_data_binance(symbol: str, interval: str = '4h', period_days: int = 15):
+def get_data_binance(symbol: str, interval: str = '4h', period_days: int = 15, use_proxy: bool = False):
     print(f"\n--- Début get_data_binance: sym='{symbol}', interval='{interval}', period='{period_days}d' ---")
     try:
         # Calculate timestamps
         end_time = int(datetime.now().timestamp() * 1000)  # Current time in milliseconds
         start_time = int((datetime.now() - timedelta(days=period_days)).timestamp() * 1000)  # Start time in milliseconds
 
-        # Binance API endpoint for klines (candlestick data)
+        # API endpoint and parameters
         url = f"https://api.binance.com/api/v3/klines"
         params = {
             'symbol': symbol,
             'interval': interval,
             'startTime': start_time,
             'endTime': end_time,
-            'limit': 1000  # Maximum allowed per request
+            'limit': 1000
         }
-        response = requests.get(url, params=params)
+
+        # Optional API key and signature (if provided in secrets)
+        api_key = st.secrets.get("binance", {}).get("API_KEY")
+        api_secret = st.secrets.get("binance", {}).get("API_SECRET")
+        if api_key and api_secret:
+            timestamp = int(datetime.now().timestamp() * 1000)
+            params['timestamp'] = timestamp
+            query_string = '&'.join([f"{k}={v}" for k, v in sorted(params.items())])
+            signature = hmac.new(api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+            headers = {
+                'X-MBX-APIKEY': api_key,
+                'Content-Type': 'application/json'
+            }
+            params['signature'] = signature
+        else:
+            headers = {}
+
+        # Proxy configuration (optional)
+        proxies = {"http": "http://your_proxy_server:port", "https": "https://your_proxy_server:port"} if use_proxy else None
+
+        response = requests.get(url, params=params, headers=headers, proxies=proxies)
         
         if response.status_code != 200:
             st.error(f"Erreur API Binance pour {symbol}: Code {response.status_code} - {response.text}")
             print(f"Erreur API Binance pour {symbol}: Code {response.status_code}\n{response.text}")
             if response.status_code == 451:
                 time.sleep(1)  # Wait 1 second and retry once
-                response = requests.get(url, params=params)
+                response = requests.get(url, params=params, headers=headers, proxies=proxies)
                 if response.status_code != 200:
                     st.error(f"Échec après tentative pour {symbol}: Code {response.status_code}")
                     return None
@@ -110,8 +132,8 @@ def get_data_binance(symbol: str, interval: str = '4h', period_days: int = 15):
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms', utc=True)
         df.set_index('open_time', inplace=True)
         df = df[['open', 'high', 'low', 'close']].astype(float)
-        df.columns = ['Open', 'High', 'Low', 'Close']  # Match expected column names
-        df = df.sort_index()  # Ensure chronological order
+        df.columns = ['Open', 'High', 'Low', 'Close']
+        df = df.sort_index()
 
         if len(df) < 50:
             st.warning(f"Binance: Données insuffisantes pour {symbol} ({len(df)} barres).")
@@ -285,7 +307,7 @@ def get_stars_pine(confluence_value):
 col1, col2 = st.columns([1, 3])
 with col1:
     st.subheader("⚙️ Paramètres")
-    min_conf = st.selectbox("Confluence min (0-6)", options=[0, 1, 2, 3, 4, 5, 6], index=3, format_func=lambda x: f"{x} (confluence)")
+    min_conf = st.selectbox("Confluence min (0-6)", options=[0, 1, 2, 3, 4, 5, 6], index=1, format_func=lambda x: f"{x} (confluence)")
     show_all = st.checkbox("Voir toutes les paires (ignorer filtre)")
     pair_to_debug = st.selectbox("🔍 Afficher OHLC pour:", ["Aucune"] + FOREX_PAIRS_BINANCE, index=0)
     scan_btn = st.button("🔍 Scanner (Données Binance H1)", type="primary", use_container_width=True)
@@ -331,7 +353,7 @@ with col2:
                     'RSI': 'N/A', 'ADX': 'N/A', 'Bull': 0, 'Bear': 0,
                     'details': {'Info': 'Données Binance non dispo/symb invalide (logs serveur)'}
                 })
-            time.sleep(0.5)  # Increased delay to respect rate limits
+            time.sleep(0.5)  # Delay to respect rate limits
         pb.empty()
         stx.empty()
         if pr_res:
