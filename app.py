@@ -10,10 +10,10 @@ st.set_page_config(page_title="Scanner Confluence Forex (Binance Data)", page_ic
 st.title("🔍 Scanner Confluence Forex Premium (Données Binance)")
 st.markdown("*Utilisation de l'API Binance pour les données de marché H1*")
 
-# Forex pairs in Binance format
+# Forex pairs in Binance format with corrected symbols
 FOREX_PAIRS_BINANCE = [
     'EURUSDT', 'GBPUSDT', 'BTCUSDT', 'ETHUSDT',
-    'AUDUSDT', 'USDTUSD', 'NZDUSDT', 'XRPUSDT',
+    'AUDUSDT', 'USDCUSDT', 'NZDUSDT', 'XRPUSDT',
     'BNBUSDT', 'ADAUSDT'
 ]
 
@@ -84,9 +84,16 @@ def get_data_binance(symbol: str, interval: str = '4h', period_days: int = 15):
         response = requests.get(url, params=params)
         
         if response.status_code != 200:
-            st.error(f"Erreur API Binance pour {symbol}: Code {response.status_code}")
+            st.error(f"Erreur API Binance pour {symbol}: Code {response.status_code} - {response.text}")
             print(f"Erreur API Binance pour {symbol}: Code {response.status_code}\n{response.text}")
-            return None
+            if response.status_code == 451:
+                time.sleep(1)  # Wait 1 second and retry once
+                response = requests.get(url, params=params)
+                if response.status_code != 200:
+                    st.error(f"Échec après tentative pour {symbol}: Code {response.status_code}")
+                    return None
+            else:
+                return None
         
         data = response.json()
         if not data:
@@ -297,7 +304,7 @@ with col2:
                 st.warning(f"N'a pas pu charger données de débogage pour {pair_to_debug}.")
             st.divider()
         for i, symbol_scan in enumerate(FOREX_PAIRS_BINANCE):
-            pnd = symbol_scan.replace('USDT', '').replace('BTC', 'BTC').replace('ETH', 'ETH').replace('XRP', 'XRP').replace('BNB', 'BNB').replace('ADA', 'ADA')
+            pnd = symbol_scan.replace('USDT', '').replace('USDC', 'USDC').replace('BTC', 'BTC').replace('ETH', 'ETH').replace('XRP', 'XRP').replace('BNB', 'BNB').replace('ADA', 'ADA')
             cp = (i + 1) / len(FOREX_PAIRS_BINANCE)
             pb.progress(cp)
             stx.text(f"Analyse (Binance H1): {pnd} ({i+1}/{len(FOREX_PAIRS_BINANCE)})")
@@ -324,7 +331,7 @@ with col2:
                     'RSI': 'N/A', 'ADX': 'N/A', 'Bull': 0, 'Bear': 0,
                     'details': {'Info': 'Données Binance non dispo/symb invalide (logs serveur)'}
                 })
-            time.sleep(0.1)  # Small delay to respect Binance rate limits
+            time.sleep(0.5)  # Increased delay to respect rate limits
         pb.empty()
         stx.empty()
         if pr_res:
@@ -354,4 +361,3 @@ with col2:
 with st.expander("ℹ️ Comment ça marche (Logique Pine Script avec Données Binance)"):
     st.markdown("""**6 Signaux Confluence:** HMA(20), RSI(10), ADX(14)>=20, HA(Simple), SHA(10,10), Ichi(9,26,52).**Comptage & Étoiles:** Pine.**Source:** Binance API.""")
 st.caption("Scanner H1 (Binance). Multi-TF non actif.")
-    
