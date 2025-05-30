@@ -1,14 +1,10 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta, timezone 
+from datetime import datetime, timezone
 import time
-import traceback 
-
-# === Import du module Binance Futures ===
+import traceback
 from binance.client import Client
-import pandas as pd
-import numpy as np
 
 # === Fonction de récupération des données via Binance Futures ===
 def get_data_binance(symbol="EURUSDT", interval="1h", limit=300):
@@ -35,7 +31,7 @@ def get_data_binance(symbol="EURUSDT", interval="1h", limit=300):
     df.set_index("timestamp", inplace=True)
     df = df[["open", "high", "low", "close", "volume"]].apply(pd.to_numeric)
     df.index = df.index.tz_localize('UTC')  # Pour compatibilité avec le reste 
-    
+
     return df.dropna()
 
 
@@ -47,7 +43,7 @@ def hull_ma_pine(dc, p=20):
     wma1=dc.rolling(window=hl).apply(lambda x:np.sum(x*np.arange(1,len(x)+1))/np.sum(np.arange(1,len(x)+1)),raw=True)
     wma2=dc.rolling(window=p).apply(lambda x:np.sum(x*np.arange(1,len(x)+1))/np.sum(np.arange(1,len(x)+1)),raw=True)
     diff=2*wma1-wma2; return diff.rolling(window=sl).apply(lambda x:np.sum(x*np.arange(1,len(x)+1))/np.sum(np.arange(1,len(x)+1)),raw=True)
-def rsi_pine(po4,p=10):
+def rsi_pine(po4,p=10): 
     d=po4.diff();g=d.where(d>0,0.0);l=-d.where(d<0,0.0);ag=rma(g,p);al=rma(l,p);rs=ag/al.replace(0,1e-9);rsi=100-(100/(1+rs));return rsi.fillna(50)
 def adx_pine(h,l,c,p=14):
     tr1=h-l;tr2=abs(h-c.shift(1));tr3=abs(l-c.shift(1));tr=pd.concat([tr1,tr2,tr3],axis=1).max(axis=1);atr=rma(tr,p)
@@ -69,10 +65,13 @@ def smoothed_heiken_ashi_pine(dfo,l1=10,l2=10):
     hao_i,hac_i=heiken_ashi_pine(hai);sho=ema(hao_i,l2);shc=ema(hac_i,l2);return sho,shc
 def ichimoku_pine_signal(df_high, df_low, df_close, tenkan_p=9, kijun_p=26, senkou_b_p=52):
     min_len_req=max(tenkan_p,kijun_p,senkou_b_p)
-    if len(df_high)<min_len_req or len(df_low)<min_len_req or len(df_close)<min_len_req:print(f"Ichi:Data<({len(df_close)}) vs req {min_len_req}.");return 0
-    ts=(df_high.rolling(window=tenkan_p).max()+df_low.rolling(window=tenkan_p).min())/2;ks=(df_high.rolling(window=kijun_p).max()+df_low.rolling(window=kijun_p).min())/2
+    if len(df_high)<min_len_req or len(df_low)<min_len_req or len(df_close)<min_len_req:
+        print(f"Ichi:Data<({len(df_close)}) vs req {min_len_req}.");return 0
+    ts=(df_high.rolling(window=tenkan_p).max()+df_low.rolling(window=tenkan_p).min())/2
+    ks=(df_high.rolling(window=kijun_p).max()+df_low.rolling(window=kijun_p).min())/2
     sa=(ts+ks)/2;sb=(df_high.rolling(window=senkou_b_p).max()+df_low.rolling(window=senkou_b_p).min())/2
-    if pd.isna(df_close.iloc[-1]) or pd.isna(sa.iloc[-1]) or pd.isna(sb.iloc[-1]):print("Ichi:NaN close/spans.");return 0
+    if pd.isna(df_close.iloc[-1]) or pd.isna(sa.iloc[-1]) or pd.isna(sb.iloc[-1]):
+        print("Ichi:NaN close/spans.");return 0
     ccl=df_close.iloc[-1];cssa=sa.iloc[-1];cssb=sb.iloc[-1];ctn=max(cssa,cssb);cbn=min(cssa,cssb);sig=0
     if ccl>ctn:sig=1
     elif ccl<cbn:sig=-1
@@ -87,6 +86,7 @@ FOREX_PAIRS_BINANCE = [
 
 # Utilisation de la nouvelle liste
 FOREX_PAIRS_YF = FOREX_PAIRS_BINANCE
+
 
 # === Fonction de calcul des signaux (inchangée) ===
 def calculate_all_signals_pine(data):
@@ -105,7 +105,7 @@ def calculate_all_signals_pine(data):
     bull_confluences = 0
     bear_confluences = 0
     signal_details_pine = {}
-    
+
     # 1. HMA
     try:
         hma_series = hull_ma_pine(close, 20)
@@ -216,7 +216,7 @@ def calculate_all_signals_pine(data):
         elif ichimoku_signal_val == 0 and \
              (len(data) < max(9,26,52) or \
              (len(data) > 0 and (pd.isna(data['Close'].iloc[-1]) or \
-                                pd.isna(high.rolling(window=max(9,26,52)).max().iloc[-1]) ) ): 
+                                pd.isna(high.rolling(window=max(9,26,52)).max().iloc[-1]))): 
             signal_details_pine['Ichi'] = "N/D"
         else: 
             signal_details_pine['Ichi'] = "─"
@@ -250,6 +250,7 @@ def get_stars_pine(confluence_value):
     elif confluence_value == 1: return "⭐"
     else: return "WAIT"
 
+
 # === Interface Streamlit ===
 st.set_page_config(page_title="Scanner Confluence Forex (Binance)", page_icon="⭐", layout="wide")
 st.title("🔍 Scanner Confluence Forex Premium (Données Binance)")
@@ -265,7 +266,7 @@ with col1:
 
 with col2:
     if scan_btn:
-        st.info(f"🔄 Scan en cours (Binance Futures H1)...");pr_res=[];pb=st.progress(0);stx=st.empty()
+        st.info(f"🔄 Scan en cours (Binance Futures)...");pr_res=[];pb=st.progress(0);stx=st.empty()
         if pair_to_debug != "Aucune":
             st.subheader(f"Données OHLC pour {pair_to_debug} (Binance Futures):")
             debug_data = get_data_binance(pair_to_debug, interval="1h", limit=100)
